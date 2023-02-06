@@ -1,10 +1,11 @@
 mod cogs;
 use cogs::{math::*, meta::*, dev::*};
+use serenity::framework::standard::DispatchError;
 use serenity::http::Http;
 use serenity::model::prelude::Activity;
 
 use std::collections::HashSet;
-use serenity::framework::standard::macros::help;
+use serenity::framework::standard::macros::{help, hook};
 use serenity::framework::standard::{
     help_commands,
     Args,
@@ -31,6 +32,9 @@ impl EventHandler for Handler {
 }
 
 #[help]
+#[individual_command_tip = "You can view my dashboard [here](https://isirk.xyz/lite/dashboard)\nUse `!help <command>` for more information about a command."]
+#[usage_label = "a"]
+#[strikethrough_commands_tip_in_guild = ""]
 #[command_not_found_text = "Could not find: `{}`."]
 #[embed_success_colour(BLURPLE)]
 #[max_levenshtein_distance(3)]
@@ -46,6 +50,34 @@ async fn my_help(
 ) -> CommandResult {
     let _ = help_commands::with_embeds(context, msg, args, help_options, groups, owners).await;
     Ok(())
+}
+
+#[hook]
+async fn dispatch_error(
+    context: &Context,
+    msg: &Message,
+    error: DispatchError,
+    command_name: &str,
+) {
+    match error {
+        DispatchError::NotEnoughArguments {
+            min,
+            given,
+        } => {
+            let s = format!("Need {} arguments, but only got {}.", min, given);
+
+            let _ = msg.reply(&context, &s).await;
+        },
+        DispatchError::TooManyArguments {
+            max,
+            given,
+        } => {
+            let s = format!("Max arguments allowed is {}, but got {}.", max, given);
+
+            let _ = msg.channel_id.say(&context, &s).await;
+        },
+        _ => {msg.reply(context, format!("Error in command **{}**\n```rust\n{:?}```", command_name, error)).await.unwrap();}
+    }
 }
 
 #[tokio::main]
@@ -73,15 +105,17 @@ async fn main() {
 
     let framework = StandardFramework::new()
         .configure(|c| c
-                    .with_whitespace(true)
-                    .on_mention(Some(bot_id))
-                    .prefix("!")
-                    .delimiters(vec![", ", ","])
-                    .owners(owners))
-                    .help(&MY_HELP)
-                    .group(&META_GROUP)
-                    .group(&DEV_GROUP)
-                    .group(&MATH_GROUP);
+            .with_whitespace(true)
+            .on_mention(Some(bot_id))
+            .prefix("!")
+            .delimiters(vec![", ", ","])
+            .owners(owners))
+
+            .on_dispatch_error(dispatch_error)
+            .help(&MY_HELP)
+            .group(&META_GROUP)
+            .group(&DEV_GROUP)
+            .group(&MATH_GROUP);
 
     let mut client = Client::builder(token, intents)
         .event_handler(Handler)
